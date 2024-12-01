@@ -2,10 +2,12 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict
 
 from sqlalchemy import JSON, MetaData, String
+from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from project.core.config import settings
+from project.core.exceptions import DatabaseError
 
 
 class PostgresDatabase:
@@ -25,9 +27,9 @@ class PostgresDatabase:
             try:
                 yield session
                 await session.commit()
-            except Exception:
+            except (Exception, PendingRollbackError) as error:
                 await session.rollback()
-                raise
+                raise DatabaseError(message=repr(error))
 
 
 database = PostgresDatabase()

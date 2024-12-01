@@ -1,25 +1,21 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 
 from project.schemas.user import UserSchema, UserCreateUpdateSchema
-from project.schemas.healthcheck import HealthCheckSchema
+
 from project.core.exceptions import UserNotFound, UserAlreadyExists
-from project.api.depends import database, user_repo
+from project.api.depends import database, user_repo, get_current_user, check_for_admin_access
+from project.resource.auth import get_password_hash
 
 
-router = APIRouter()
+user_router = APIRouter()
 
 
-@router.get("/healthcheck", response_model=HealthCheckSchema, status_code=status.HTTP_200_OK)
-async def check_health() -> HealthCheckSchema:
-    async with database.session() as session:
-        db_is_ok = await user_repo.check_connection(session=session)
-
-    return HealthCheckSchema(
-        db_is_ok=db_is_ok,
-    )
-
-
-@router.get("/all_users", response_model=list[UserSchema], status_code=status.HTTP_200_OK)
+@user_router.get(
+    "/all_users",
+    response_model=list[UserSchema],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(get_current_user)],
+)
 async def get_all_users() -> list[UserSchema]:
     async with database.session() as session:
         all_users = await user_repo.get_all_users(session=session)
@@ -27,7 +23,12 @@ async def get_all_users() -> list[UserSchema]:
     return all_users
 
 
-@router.get("/user/{user_id}", response_model=UserSchema, status_code=status.HTTP_200_OK)
+@user_router.get(
+    "/user/{user_id}",
+    response_model=UserSchema,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(get_current_user)],
+)
 async def get_user_by_id(
     user_id: int,
 ) -> UserSchema:
@@ -40,12 +41,19 @@ async def get_user_by_id(
     return user
 
 
-@router.post("/add_user", response_model=UserSchema, status_code=status.HTTP_201_CREATED)
+@user_router.post(
+    "/add_user",
+    response_model=UserSchema,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_user(
     user_dto: UserCreateUpdateSchema,
+    current_user: UserSchema = Depends(get_current_user),
 ) -> UserSchema:
+    check_for_admin_access(user=current_user)
     try:
         async with database.session() as session:
+            user_dto.password = get_password_hash(password=user_dto.password)
             new_user = await user_repo.create_user(session=session, user=user_dto)
     except UserAlreadyExists as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error.message)
@@ -53,7 +61,7 @@ async def add_user(
     return new_user
 
 
-@router.put(
+@user_router.put(
     "/update_user/{user_id}",
     response_model=UserSchema,
     status_code=status.HTTP_200_OK,
@@ -61,9 +69,12 @@ async def add_user(
 async def update_user(
     user_id: int,
     user_dto: UserCreateUpdateSchema,
+    current_user: UserSchema = Depends(get_current_user),
 ) -> UserSchema:
+    check_for_admin_access(user=current_user)
     try:
         async with database.session() as session:
+            user_dto.password = get_password_hash(password=user_dto.password)
             updated_user = await user_repo.update_user(
                 session=session,
                 user_id=user_id,
@@ -75,10 +86,15 @@ async def update_user(
     return updated_user
 
 
-@router.delete("/delete_user/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@user_router.delete(
+    "/delete_user/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_user(
     user_id: int,
+    current_user: UserSchema = Depends(get_current_user),
 ) -> None:
+    check_for_admin_access(user=current_user)
     try:
         async with database.session() as session:
             user = await user_repo.delete_user(session=session, user_id=user_id)

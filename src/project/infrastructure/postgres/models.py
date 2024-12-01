@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, false
 
 from project.infrastructure.postgres.database import Base
 
@@ -13,6 +13,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(nullable=False, unique=True)
     password: Mapped[str] = mapped_column(nullable=False)
     phone_number: Mapped[str] = mapped_column(nullable=True)
+    is_admin: Mapped[bool] = mapped_column(default=False, server_default=false())
 
 
 class Study(Base):

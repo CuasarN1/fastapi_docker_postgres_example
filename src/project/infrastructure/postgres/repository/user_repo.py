@@ -1,8 +1,8 @@
 from typing import Type
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select, insert, update, delete
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text, select, insert, update, delete, true
+from sqlalchemy.exc import IntegrityError, PendingRollbackError, InterfaceError
 
 from project.schemas.user import UserSchema, UserCreateUpdateSchema
 from project.infrastructure.postgres.models import User
@@ -17,11 +17,29 @@ class UserRepository:
         self,
         session: AsyncSession,
     ) -> bool:
-        query = "select 1;"
+        query = select(true())
 
-        result = await session.scalar(text(query))
+        try:
+            return await session.scalar(query)
+        except (Exception, InterfaceError):
+            return False
 
-        return True if result else False
+    async def get_user_by_email(
+        self,
+        session: AsyncSession,
+        email: str,
+    ) -> UserSchema:
+        query = (
+            select(self._collection)
+            .where(self._collection.email == email)
+        )
+
+        user = await session.scalar(query)
+
+        if not user:
+            raise UserNotFound(_id=email)
+
+        return UserSchema.model_validate(obj=user)
 
     async def get_all_users(
         self,
